@@ -1,0 +1,39 @@
+[package]
+name = "fastsave"
+version = "0.1.0"
+edition = "2021"
+authors = ["Fabian Stutzki <fast@fast-apps.de>"]
+description = "A tool for executing and monitoring scripts with metadata output"
+documentation = "https://docs.rs/fastsave"
+readme = "README.md"
+license = "MIT"
+repository = "https://github.com/FaSt-Apps-Consulting/fastsave"
+
+# Include documentation and other important files in the package
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    "docs/**/*",
+]
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+tempfile = "3.2"
+
+[package.metadata.docs.rs]
+# Configure documentation build options
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+# Build documentation with all features enabled
+[features]
+default = []
