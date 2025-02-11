@@ -43,10 +43,10 @@ if __name__ == '__main__':
     
     // Verify the output files exist
     let matrix_file = Path::new(&output_dir).join("matrix.txt");
-    let fastsave_file = Path::new(&output_dir).join("fastsave.json");
+    let fastsave_file = Path::new(&output_dir).join("fastsave.yaml");
     
     assert!(matrix_file.exists(), "matrix.txt should exist");
-    assert!(fastsave_file.exists(), "fastsave.json should exist");
+    assert!(fastsave_file.exists(), "fastsave.yaml should exist");
     
     // Verify the content of matrix.txt
     let matrix_content = fs::read_to_string(matrix_file).unwrap();
@@ -55,9 +55,9 @@ if __name__ == '__main__':
     // Verify the output directory name format
     assert!(output_dir.contains("run_simulation_run1"));
     
-    // Verify the JSON content
-    let json_content = fs::read_to_string(fastsave_file).unwrap();
-    let saved_result: ExecutionResult = serde_json::from_str(&json_content).unwrap();
+    // Verify the YAML content
+    let yaml_content = fs::read_to_string(fastsave_file).unwrap();
+    let saved_result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
     assert_eq!(saved_result.exit_code, 0);
 }
 
@@ -217,9 +217,9 @@ if __name__ == '__main__':
 
     let output_dir = run_script(&cli).unwrap();
     
-    // Read and parse the fastsave.json file
-    let json_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.json")).unwrap();
-    let result: ExecutionResult = serde_json::from_str(&json_content).unwrap();
+    // Read and parse the fastsave.yaml file
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
 
     // Verify Git information
     let git_info = result.git_info.expect("Git info should be present");
@@ -234,8 +234,8 @@ if __name__ == '__main__':
     fs::write(repo_dir.path().join("new_file.txt"), "new content").unwrap();
     
     let output_dir = run_script(&cli).unwrap();
-    let json_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.json")).unwrap();
-    let result: ExecutionResult = serde_json::from_str(&json_content).unwrap();
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
     
     let git_info = result.git_info.expect("Git info should be present");
     assert!(git_info.is_dirty);
@@ -280,9 +280,9 @@ if __name__ == '__main__':
 
     let output_dir = run_script(&cli).unwrap();
     
-    // Read and parse the fastsave.json file
-    let json_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.json")).unwrap();
-    let result: ExecutionResult = serde_json::from_str(&json_content).unwrap();
+    // Read and parse the fastsave.yaml file
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
     
     // Verify file hashes
     assert!(result.file_hashes.contains_key("file1.txt"));

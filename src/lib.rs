@@ -9,6 +9,7 @@ use std::fs;
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use std::io::Read;
+use serde_yaml;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -55,6 +56,7 @@ pub struct ExecutionResult {
     pub message: Option<String>,
     pub git_info: Option<GitInfo>,
     pub file_hashes: HashMap<String, String>,
+    pub command_string: String,
 }
 
 pub fn get_script_basename(script_path: &str) -> String {
@@ -192,7 +194,6 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
     let start_time = SystemTime::now();
     let start_datetime = DateTime::<Utc>::from(start_time);
 
-    // let script_type = get_script_type(script_path)?;
     let git_info = get_git_info(script_path);
 
     let path = Path::new(script_path);
@@ -219,6 +220,15 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
         cmd.arg(arg);
     }
 
+    // Create command string for logging and saving
+    let command_string = format!("{} {}", 
+        cmd.get_program().to_string_lossy().into_owned(), 
+        cmd.get_args().map(|os_str| os_str.to_string_lossy().into_owned()).collect::<Vec<String>>().join(" ")
+    );
+
+    // Print the command before executing
+    println!("Fastsave executes:\n{}", command_string);
+
     let output = cmd.output()?;
 
     let end_time = SystemTime::now();
@@ -236,6 +246,7 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
         message,
         git_info,
         file_hashes: HashMap::new(),
+        command_string,
     };
 
     Ok(result)
@@ -244,7 +255,7 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
 pub fn run_script(cli: &Cli) -> Result<String, Box<dyn Error>> {
     // Get output directory
     let output_dir = get_output_dir(cli)?;
-    let output_file = Path::new(&output_dir).join("fastsave.json");
+    let output_file = Path::new(&output_dir).join("fastsave.yaml");
 
     // Execute script with additional arguments
     let mut result = execute_script(&cli.script, &output_dir, cli.message.clone(), &cli.script_args)?;
@@ -252,9 +263,9 @@ pub fn run_script(cli: &Cli) -> Result<String, Box<dyn Error>> {
     // Calculate hashes for all generated files
     result.file_hashes = get_file_hashes(Path::new(&output_dir))?;
 
-    // Save results to JSON file
-    let json = serde_json::to_string_pretty(&result)?;
-    fs::write(&output_file, json)?;
+    // Save results to YAML file instead of JSON
+    let yaml = serde_yaml::to_string(&result)?;
+    fs::write(&output_file, yaml)?;
 
     Ok(output_dir)
 } 
