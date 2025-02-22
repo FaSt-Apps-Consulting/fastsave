@@ -10,6 +10,8 @@ use std::collections::HashMap;
 use sha2::{Sha256, Digest};
 use std::io::Read;
 use serde_yaml;
+use std::process::Stdio;
+use std::io::{self, Write, BufRead, BufReader};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -202,34 +204,81 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
         .ok_or("Unable to determine script type: no file extension")?;
     
     let program = match extension.to_lowercase().as_str() {
-        "py" => "python",
+        "py" => "python3",
         "sh" => "sh",
         "jl" => "julia",
         "m" => "matlab",
         _ => return Err("Unsupported script type".into()),
     };
 
-    // Build command with all arguments
+    // Build command string for logging and saving
+    let command_string = format!("{} {}", 
+        program,
+        script_path
+    );
+
+    // Print the command before executing
+    println!("Fastsave executes:\n{}", command_string);
+    io::stdout().flush()?;
+
+    // Build command with stdio configuration
     let mut cmd = Command::new(program);
     cmd.arg(script_path)
         .arg("--output_dir")
-        .arg(output_dir);
+        .arg(output_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     
     // Add any additional script arguments
     for arg in script_args {
         cmd.arg(arg);
     }
 
-    // Create command string for logging and saving
-    let command_string = format!("{} {}", 
-        cmd.get_program().to_string_lossy().into_owned(), 
-        cmd.get_args().map(|os_str| os_str.to_string_lossy().into_owned()).collect::<Vec<String>>().join(" ")
-    );
+    // Spawn the command
+    let mut child = cmd.spawn()?;
+    
+    // Get handles to stdout and stderr
+    let stdout = child.stdout.take().expect("Failed to capture stdout");
+    let stderr = child.stderr.take().expect("Failed to capture stderr");
 
-    // Print the command before executing
-    println!("Fastsave executes:\n{}", command_string);
+    let stdout_reader = BufReader::new(stdout);
+    let stderr_reader = BufReader::new(stderr);
 
-    let output = cmd.output()?;
+    // Capture output while also displaying it
+    let mut captured_stdout = String::new();
+    let mut captured_stderr = String::new();
+
+    // Create separate threads for stdout and stderr
+    let stdout_handle = std::thread::spawn(move || {
+        for line in stdout_reader.lines() {
+            if let Ok(line) = line {
+                println!("{}", line);
+                io::stdout().flush().unwrap();
+                captured_stdout.push_str(&line);
+                captured_stdout.push('\n');
+            }
+        }
+        captured_stdout
+    });
+
+    let stderr_handle = std::thread::spawn(move || {
+        for line in stderr_reader.lines() {
+            if let Ok(line) = line {
+                eprintln!("{}", line);
+                io::stderr().flush().unwrap();
+                captured_stderr.push_str(&line);
+                captured_stderr.push('\n');
+            }
+        }
+        captured_stderr
+    });
+
+    // Wait for the command to complete
+    let status = child.wait()?;
+
+    // Get the captured output
+    let stdout = stdout_handle.join().unwrap_or_default();
+    let stderr = stderr_handle.join().unwrap_or_default();
 
     let end_time = SystemTime::now();
     let end_datetime = DateTime::<Utc>::from(end_time);
@@ -240,9 +289,9 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
         start_time: start_datetime,
         end_time: end_datetime,
         duration_ms: duration.as_millis() as u64,
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        exit_code: status.code().unwrap_or(-1),
+        stdout,
+        stderr,
         message,
         git_info,
         file_hashes: HashMap::new(),

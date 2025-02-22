@@ -1,10 +1,18 @@
 import random
 import argparse
 from pathlib import Path
+import time
+import sys
+
+# Force unbuffered output
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 def generate_matrix(output_dir="", rows=5, cols=10):
     """Generate a matrix with random numbers and save it to a file."""
     output_path = Path(output_dir)
+    print("Generating matrix...")
+    time.sleep(3)  # This delay will now be visible in real-time
     try:
         # Generate the matrix with random integers between 0 and 100
         matrix = [[random.randint(0, 100) for _ in range(cols)] for _ in range(rows)]
@@ -17,7 +25,7 @@ def generate_matrix(output_dir="", rows=5, cols=10):
         
         print(f"Matrix saved to {path_matrix}")
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An error occurred: {e}", file=sys.stderr)
 
 def main():
     parser = argparse.ArgumentParser(description='Generate a matrix with random numbers')
