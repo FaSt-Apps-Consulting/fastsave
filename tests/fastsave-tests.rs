@@ -3,6 +3,73 @@ use std::path::Path;
 use tempfile::TempDir;
 use fastsave::{Cli, ExecutionResult, run_script};
 use std::process::Command;
+use std::error::Error;
+use std::path::PathBuf;
+
+fn init_git_repo(dir: &Path) -> Result<(), Box<dyn Error>> {
+    Command::new("git").args(&["init"]).current_dir(dir).output()?;
+    Command::new("git").args(&["config", "user.name", "test"]).current_dir(dir).output()?;
+    Command::new("git").args(&["config", "user.email", "test@example.com"]).current_dir(dir).output()?;
+    Command::new("git").args(&["add", "."]).current_dir(dir).output()?;
+    Command::new("git").args(&["commit", "-m", "Initial commit"]).current_dir(dir).output()?;
+    Ok(())
+}
+
+fn create_nested_git_repos() -> Result<(TempDir, PathBuf), Box<dyn Error>> {
+    let root_dir = TempDir::new()?;
+    
+    // Create root git repo
+    init_git_repo(root_dir.path())?;
+    
+    // Create nested structure
+    let nested_path = root_dir.path().join("level1").join("level2");
+    fs::create_dir_all(&nested_path)?;
+    
+    // Create script in nested directory
+    let script_path = nested_path.join("test_script.py");
+    fs::write(&script_path, "print('test')")?;
+    
+    // Add and commit the script
+    Command::new("git")
+        .current_dir(root_dir.path())
+        .args(&["add", "."])
+        .output()?;
+    Command::new("git")
+        .current_dir(root_dir.path())
+        .args(&["commit", "-m", "Add test script"])
+        .output()?;
+    
+    Ok((root_dir, script_path))
+}
+
+#[test]
+fn test_git_info_collection() -> Result<(), Box<dyn Error>> {
+    let (repo_dir, script_path) = create_nested_git_repos()?;
+    
+    // Test with absolute path
+    let git_info = fastsave::get_git_info(script_path.to_str().unwrap())
+        .expect("Should get git info");
+    assert_eq!(
+        fs::canonicalize(&git_info.repo_root)?,
+        fs::canonicalize(repo_dir.path())?
+    );
+    assert!(!git_info.commit_hash.is_empty());
+    assert!(!git_info.is_dirty);
+    
+    // Test with relative path
+    let script_dir = script_path.parent().unwrap();
+    std::env::set_current_dir(script_dir)?;
+    let relative_git_info = fastsave::get_git_info("test_script.py")
+        .expect("Should get git info");
+    assert_eq!(
+        fs::canonicalize(&relative_git_info.repo_root)?,
+        fs::canonicalize(repo_dir.path())?
+    );
+    
+    // Reset working directory
+    std::env::set_current_dir(repo_dir.path())?;
+    Ok(())
+}
 
 #[test]
 fn test_basic_script_execution() {
@@ -293,4 +360,56 @@ if __name__ == '__main__':
         result.file_hashes.get("file1.txt"),
         result.file_hashes.get("file2.txt")
     );
+}
+
+#[test]
+fn test_custom_interpreter() {
+    let archive_dir = TempDir::new().unwrap();
+    
+    // Create a test script that prints its interpreter
+    let script_content = r#"
+import argparse
+import sys
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_dir', default='')
+    parser.add_argument('--interpreter', default='python')
+    args = parser.parse_args()
+    
+    output_path = Path(args.output_dir)
+    with (output_path/'interpreter_info.txt').open('w') as f:
+        f.write(f'Interpreter: {sys.executable}')
+
+if __name__ == '__main__':
+    main()
+"#;
+    
+    let script_path = archive_dir.path().join("test_script.py");
+    fs::write(&script_path, script_content).unwrap();
+    
+    // Test with python3 interpreter
+    let cli = Cli {
+        script: script_path.to_string_lossy().to_string(),
+        archive_dir: archive_dir.path().to_string_lossy().to_string(),
+        message: None,
+        no_subfolder: false,
+        script_args: vec!["--interpreter".to_string(), "python3".to_string()],
+    };
+
+    let output_dir = run_script(&cli).unwrap();
+    
+    // Verify the output file exists
+    let info_file = Path::new(&output_dir).join("interpreter_info.txt");
+    assert!(info_file.exists(), "interpreter_info.txt should exist");
+    
+    // Read and verify the content
+    let info_content = fs::read_to_string(info_file).unwrap();
+    assert!(info_content.contains("Interpreter:"), "Should contain interpreter information");
+    
+    // Verify the execution was successful
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
+    assert_eq!(result.exit_code, 0, "Script should execute successfully with custom interpreter");
 }

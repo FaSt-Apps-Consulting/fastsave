@@ -138,7 +138,7 @@ fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, Box<dyn Er
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn get_git_info(script_path: &str) -> Option<GitInfo> {
+pub fn get_git_info(script_path: &str) -> Option<GitInfo> {
     let script_path = Path::new(script_path);
     let script_dir = if script_path.is_absolute() {
         script_path.parent()?.to_path_buf()
