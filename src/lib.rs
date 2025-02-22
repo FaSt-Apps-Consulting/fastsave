@@ -110,15 +110,23 @@ pub fn get_output_dir(cli: &Cli) -> Result<String, Box<dyn Error>> {
 }
 
 fn find_git_root(start_path: &Path) -> Option<PathBuf> {
-    let mut current = start_path.to_path_buf();
-    while current.parent().is_some() {
+    let mut current = if start_path.is_absolute() {
+        start_path.to_path_buf()
+    } else {
+        std::env::current_dir().ok()?.join(start_path)
+    };
+    
+    let mut highest_git_root = None;
+
+    while let Some(parent) = current.parent() {
         let git_dir = current.join(".git");
         if git_dir.is_dir() {
-            return Some(current);
+            highest_git_root = Some(current.clone());
         }
-        current = current.parent().unwrap().to_path_buf();
+        current = parent.to_path_buf();
     }
-    None
+
+    highest_git_root
 }
 
 fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, Box<dyn Error>> {
@@ -127,30 +135,38 @@ fn run_git_command(repo_path: &Path, args: &[&str]) -> Result<String, Box<dyn Er
         .args(args)
         .output()?;
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Err(format!(
-            "Git command failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ).into())
-    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn get_git_info(script_path: &str) -> Option<GitInfo> {
-    let script_dir = Path::new(script_path).parent()?;
-    let repo_root = find_git_root(script_dir)?;
+    let script_path = Path::new(script_path);
+    let script_dir = if script_path.is_absolute() {
+        script_path.parent()?.to_path_buf()
+    } else {
+        let current_dir = std::env::current_dir().ok()?;
+        current_dir.join(script_path).parent()?.to_path_buf()
+    };
+    
+    let repo_root = find_git_root(&script_dir)?;
+    
+    // Print debug information
+    println!("Debug: Found git root at: {}", repo_root.display());
     
     let result = (|| -> Result<GitInfo, Box<dyn Error>> {
         let branch = run_git_command(&repo_root, &["rev-parse", "--abbrev-ref", "HEAD"])?;
         let commit_hash = run_git_command(&repo_root, &["rev-parse", "HEAD"])?;
-        let remote_url = run_git_command(&repo_root, &["config", "--get", "remote.origin.url"])
-            .unwrap_or_else(|_| String::from("No remote URL found"));
+        
+        // Handle remote URL more gracefully
+        let remote_url = match run_git_command(&repo_root, &["config", "--get", "remote.origin.url"]) {
+            Ok(url) if !url.is_empty() => url,
+            _ => String::from("No remote URL found"),
+        };
         
         let status_output = run_git_command(&repo_root, &["status", "--porcelain"])?;
         let is_dirty = !status_output.is_empty();
         let uncommitted_changes = status_output
             .lines()
+            .filter(|line| !line.is_empty())
             .map(|line| line.to_string())
             .collect();
 
@@ -164,7 +180,13 @@ fn get_git_info(script_path: &str) -> Option<GitInfo> {
         })
     })();
 
-    result.ok()
+    match result {
+        Ok(info) => Some(info),
+        Err(e) => {
+            eprintln!("Debug: Error getting git info: {}", e);
+            None
+        }
+    }
 }
 
 fn calculate_file_hash(path: &Path) -> Result<String, Box<dyn Error>> {
