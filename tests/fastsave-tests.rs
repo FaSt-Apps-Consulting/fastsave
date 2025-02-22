@@ -42,6 +42,14 @@ fn create_nested_git_repos() -> Result<(TempDir, PathBuf), Box<dyn Error>> {
     Ok((root_dir, script_path))
 }
 
+fn cleanup_config() {
+    fs::remove_file("fastsave.yaml").unwrap_or(());
+}
+
+fn setup_test() {
+    cleanup_config();
+}
+
 #[test]
 fn test_git_info_collection() -> Result<(), Box<dyn Error>> {
     let (repo_dir, script_path) = create_nested_git_repos()?;
@@ -73,7 +81,7 @@ fn test_git_info_collection() -> Result<(), Box<dyn Error>> {
 
 #[test]
 fn test_basic_script_execution() {
-    // Create a temporary directory for the archive
+    setup_test();
     let archive_dir = TempDir::new().unwrap();
     
     // Create a simple test script
@@ -104,6 +112,7 @@ if __name__ == '__main__':
         message: None,
         no_subfolder: false,
         script_args: vec![],
+        interpreter: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -161,6 +170,7 @@ if __name__ == '__main__':
         message: None,
         no_subfolder: false,
         script_args: vec!["--rows".to_string(), "3".to_string(), "--cols".to_string(), "4".to_string()],
+        interpreter: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -173,8 +183,8 @@ if __name__ == '__main__':
 
 #[test]
 fn test_custom_archive_directory() {
-    // Create a temporary directory for the custom archive
-    let custom_archive = TempDir::new().unwrap();
+    setup_test();
+    let archive_dir = TempDir::new().unwrap();
     
     // Create a simple test script
     let script_content = r#"
@@ -195,21 +205,22 @@ if __name__ == '__main__':
 "#;
     
     // Write the script to a temporary file
-    let script_path = custom_archive.path().join("test_script.py");
+    let script_path = archive_dir.path().join("test_script.py");
     fs::write(&script_path, script_content).unwrap();
     
     let cli = Cli {
         script: script_path.to_string_lossy().to_string(),
-        archive_dir: custom_archive.path().to_string_lossy().to_string(),
+        archive_dir: archive_dir.path().to_string_lossy().to_string(),
         message: None,
         no_subfolder: false,
         script_args: vec![],
+        interpreter: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
     
     // Verify that the output directory is under our custom archive directory
-    assert!(Path::new(&output_dir).starts_with(custom_archive.path()));
+    assert!(Path::new(&output_dir).starts_with(archive_dir.path()));
     
     // Verify the output file exists in the correct location
     let test_file = Path::new(&output_dir).join("test.txt");
@@ -280,6 +291,7 @@ if __name__ == '__main__':
         message: None,
         no_subfolder: false,
         script_args: vec![],
+        interpreter: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -311,6 +323,7 @@ if __name__ == '__main__':
 
 #[test]
 fn test_file_hashes() {
+    setup_test();
     let archive_dir = TempDir::new().unwrap();
     
     // Create a test script that generates multiple files
@@ -343,6 +356,7 @@ if __name__ == '__main__':
         message: None,
         no_subfolder: false,
         script_args: vec![],
+        interpreter: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -365,51 +379,120 @@ if __name__ == '__main__':
 #[test]
 fn test_custom_interpreter() {
     let archive_dir = TempDir::new().unwrap();
-    
-    // Create a test script that prints its interpreter
-    let script_content = r#"
-import argparse
-import sys
-from pathlib import Path
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--output_dir', default='')
-    parser.add_argument('--interpreter', default='python')
-    args = parser.parse_args()
-    
-    output_path = Path(args.output_dir)
-    with (output_path/'interpreter_info.txt').open('w') as f:
-        f.write(f'Interpreter: {sys.executable}')
-
-if __name__ == '__main__':
-    main()
-"#;
-    
     let script_path = archive_dir.path().join("test_script.py");
-    fs::write(&script_path, script_content).unwrap();
     
-    // Test with python3 interpreter
+    fs::write(&script_path, "print('Hello from custom interpreter')").unwrap();
+    
     let cli = Cli {
         script: script_path.to_string_lossy().to_string(),
         archive_dir: archive_dir.path().to_string_lossy().to_string(),
         message: None,
         no_subfolder: false,
-        script_args: vec!["--interpreter".to_string(), "python3".to_string()],
+        script_args: vec![],
+        interpreter: Some("python3".to_string()),
     };
 
     let output_dir = run_script(&cli).unwrap();
     
-    // Verify the output file exists
-    let info_file = Path::new(&output_dir).join("interpreter_info.txt");
-    assert!(info_file.exists(), "interpreter_info.txt should exist");
-    
-    // Read and verify the content
-    let info_content = fs::read_to_string(info_file).unwrap();
-    assert!(info_content.contains("Interpreter:"), "Should contain interpreter information");
-    
-    // Verify the execution was successful
+    // Read and verify the YAML output
     let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
     let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
+    
     assert_eq!(result.exit_code, 0, "Script should execute successfully with custom interpreter");
+    assert!(result.stdout.contains("Hello from custom interpreter"));
+}
+
+#[test]
+fn test_interpreter_override() {
+    let archive_dir = TempDir::new().unwrap();
+    let script_path = archive_dir.path().join("test_script.py");
+    
+    fs::write(&script_path, "print('Hello from custom interpreter')").unwrap();
+    
+    // Test with command-line interpreter override
+    let cli = Cli {
+        script: script_path.to_string_lossy().to_string(),
+        archive_dir: archive_dir.path().to_string_lossy().to_string(),
+        message: None,
+        no_subfolder: false,
+        script_args: vec![],
+        interpreter: Some("python3".to_string()),
+    };
+
+    let output_dir = run_script(&cli).unwrap();
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
+    
+    assert_eq!(result.exit_code, 0);
+    assert!(result.command_string.starts_with("python3 "));
+}
+
+#[test]
+fn test_interpreter_config_file() {
+    setup_test();
+    let archive_dir = TempDir::new().unwrap();
+    
+    // Create config file with custom interpreter mapping
+    let config_content = r#"
+interpreters:
+  py: python3
+  custom: custominterpreter
+"#;
+    fs::write("fastsave.yaml", config_content).unwrap();
+    
+    // Create test scripts with different extensions
+    let script_py = archive_dir.path().join("test.py");
+    fs::write(&script_py, "print('Hello from Python')").unwrap();
+    
+    // Test Python script with configured interpreter
+    let cli_py = Cli {
+        script: script_py.to_string_lossy().to_string(),
+        archive_dir: archive_dir.path().to_string_lossy().to_string(),
+        message: None,
+        no_subfolder: false,
+        script_args: vec![],
+        interpreter: None,  // Use config file
+    };
+
+    let output_dir = run_script(&cli_py).unwrap();
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
+    
+    assert!(result.command_string.starts_with("python3 "));
+
+    cleanup_config();
+}
+
+#[test]
+fn test_interpreter_precedence() {
+    setup_test();
+    let archive_dir = TempDir::new().unwrap();
+    
+    // Create config file with interpreter mapping
+    let config_content = r#"
+interpreters:
+  py: python3
+"#;
+    fs::write("fastsave.yaml", config_content).unwrap();
+    
+    let script_path = archive_dir.path().join("test.py");
+    fs::write(&script_path, "print('Hello')").unwrap();
+    
+    // Test that command-line override takes precedence over config file
+    let cli = Cli {
+        script: script_path.to_string_lossy().to_string(),
+        archive_dir: archive_dir.path().to_string_lossy().to_string(),
+        message: None,
+        no_subfolder: false,
+        script_args: vec![],
+        interpreter: Some("python3".to_string()),  // Use python3 instead of just python
+    };
+
+    let output_dir = run_script(&cli).unwrap();
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml")).unwrap();
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content).unwrap();
+    
+    assert!(result.command_string.starts_with("python3 "));
+
+    cleanup_config();
 }

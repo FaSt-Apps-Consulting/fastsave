@@ -12,6 +12,7 @@ use std::io::Read;
 use serde_yaml;
 use std::process::Stdio;
 use std::io::{self, Write, BufRead, BufReader};
+use shellexpand;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -34,6 +35,10 @@ pub struct Cli {
     /// Additional arguments to pass to the script
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub script_args: Vec<String>,
+
+    /// Override the interpreter for the script
+    #[arg(short = 'i', long = "interpreter")]
+    pub interpreter: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -59,6 +64,47 @@ pub struct ExecutionResult {
     pub git_info: Option<GitInfo>,
     pub file_hashes: HashMap<String, String>,
     pub command_string: String,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct FastsaveConfig {
+    interpreters: HashMap<String, String>,
+}
+
+impl FastsaveConfig {
+    pub fn load() -> Self {
+        // Look for config in common locations
+        let config_paths = [
+            "fastsave.yaml",  // Current directory
+            "~/.config/fastsave/config.yaml", // User config directory
+        ];
+
+        for path in config_paths.iter() {
+            let expanded_path = shellexpand::tilde(path).to_string();
+            println!("Debug: Trying to load config from: {}", expanded_path);
+            if let Ok(contents) = fs::read_to_string(&expanded_path) {
+                println!("Debug: Found config file with contents:\n{}", contents);
+                match serde_yaml::from_str(&contents) {
+                    Ok(config) => {
+                        println!("Debug: Successfully parsed config");
+                        return config;
+                    }
+                    Err(e) => println!("Debug: Failed to parse config: {}", e),
+                }
+            }
+        }
+        
+        println!("Debug: No config file found, using default config");
+        FastsaveConfig::default()
+    }
+
+    pub fn get_interpreter(&self, extension: &str) -> Option<&String> {
+        // Remove the leading dot if present and convert to lowercase
+        let ext = extension.trim_start_matches('.').to_lowercase();
+        let result = self.interpreters.get(&ext);
+        println!("Debug: Looking up interpreter for extension '{}', found: {:?}", ext, result);
+        result
+    }
 }
 
 pub fn get_script_basename(script_path: &str) -> String {
@@ -214,7 +260,7 @@ fn get_file_hashes(dir: &Path) -> Result<HashMap<String, String>, Box<dyn Error>
     Ok(hashes)
 }
 
-pub fn execute_script(script_path: &str, output_dir: &str, message: Option<String>, script_args: &[String]) -> Result<ExecutionResult, Box<dyn Error>> {
+pub fn execute_script(script_path: &str, output_dir: &str, message: Option<String>, script_args: &[String], interpreter_override: Option<&String>) -> Result<ExecutionResult, Box<dyn Error>> {
     let start_time = SystemTime::now();
     let start_datetime = DateTime::<Utc>::from(start_time);
 
@@ -225,12 +271,22 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
         .and_then(|ext| ext.to_str())
         .ok_or("Unable to determine script type: no file extension")?;
     
-    let program = match extension.to_lowercase().as_str() {
-        "py" => "python3",
-        "sh" => "sh",
-        "jl" => "julia",
-        "m" => "matlab",
-        _ => return Err("Unsupported script type".into()),
+    let program = if let Some(interpreter) = interpreter_override {
+        interpreter.clone()
+    } else {
+        let config = FastsaveConfig::load();
+        if let Some(interpreter) = config.get_interpreter(extension) {
+            interpreter.to_string()
+        } else {
+            // Fall back to built-in defaults
+            match extension.to_lowercase().as_str() {
+                "py" => "python3".to_string(),
+                "sh" => "sh".to_string(),
+                "jl" => "julia".to_string(),
+                "m" => "matlab".to_string(),
+                _ => return Err(format!("Unsupported script type: {}", extension).into()),
+            }
+        }
     };
 
     // Build command string for logging and saving
@@ -324,12 +380,16 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
 }
 
 pub fn run_script(cli: &Cli) -> Result<String, Box<dyn Error>> {
-    // Get output directory
     let output_dir = get_output_dir(cli)?;
     let output_file = Path::new(&output_dir).join("fastsave.yaml");
 
-    // Execute script with additional arguments
-    let mut result = execute_script(&cli.script, &output_dir, cli.message.clone(), &cli.script_args)?;
+    let mut result = execute_script(
+        &cli.script, 
+        &output_dir, 
+        cli.message.clone(), 
+        &cli.script_args,
+        cli.interpreter.as_ref(),
+    )?;
 
     // Calculate hashes for all generated files
     result.file_hashes = get_file_hashes(Path::new(&output_dir))?;
