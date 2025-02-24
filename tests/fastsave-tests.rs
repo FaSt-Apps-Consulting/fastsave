@@ -113,6 +113,7 @@ if __name__ == '__main__':
         no_subfolder: false,
         script_args: vec![],
         interpreter: None,
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -171,6 +172,7 @@ if __name__ == '__main__':
         no_subfolder: false,
         script_args: vec!["--rows".to_string(), "3".to_string(), "--cols".to_string(), "4".to_string()],
         interpreter: None,
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -215,6 +217,7 @@ if __name__ == '__main__':
         no_subfolder: false,
         script_args: vec![],
         interpreter: None,
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -292,6 +295,7 @@ if __name__ == '__main__':
         no_subfolder: false,
         script_args: vec![],
         interpreter: None,
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -357,6 +361,7 @@ if __name__ == '__main__':
         no_subfolder: false,
         script_args: vec![],
         interpreter: None,
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -390,6 +395,7 @@ fn test_custom_interpreter() {
         no_subfolder: false,
         script_args: vec![],
         interpreter: Some("python3".to_string()),
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -417,6 +423,7 @@ fn test_interpreter_override() {
         no_subfolder: false,
         script_args: vec![],
         interpreter: Some("python3".to_string()),
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -452,6 +459,7 @@ interpreters:
         no_subfolder: false,
         script_args: vec![],
         interpreter: None,  // Use config file
+        config_path: None,
     };
 
     let output_dir = run_script(&cli_py).unwrap();
@@ -486,6 +494,7 @@ interpreters:
         no_subfolder: false,
         script_args: vec![],
         interpreter: Some("python3".to_string()),  // Use python3 instead of just python
+        config_path: None,
     };
 
     let output_dir = run_script(&cli).unwrap();
@@ -495,4 +504,57 @@ interpreters:
     assert!(result.command_string.starts_with("python3 "));
 
     cleanup_config();
+}
+
+#[test]
+fn test_custom_config_path() {
+    setup_test();
+    let archive_dir = TempDir::new().unwrap();
+    
+    // Create custom config file in a different location
+    let config_dir = TempDir::new().unwrap();
+    let config_path = config_dir.path().join("custom_config.yaml");
+    let config_content = r#"
+interpreters:
+  py: python3
+  sh: bash
+"#;
+    fs::write(&config_path, config_content).unwrap();
+    
+    let script_path = archive_dir.path().join("test.py");
+    fs::write(&script_path, "print('Hello')").unwrap();
+    
+    let cli = Cli {
+        script: script_path.to_string_lossy().to_string(),
+        archive_dir: archive_dir.path().to_string_lossy().to_string(),
+        message: None,
+        no_subfolder: false,
+        script_args: vec![],
+        interpreter: None,
+        config_path: Some(config_path.to_string_lossy().to_string()),
+    };
+
+    // Run the script and handle potential errors
+    let output_dir = match run_script(&cli) {
+        Ok(dir) => dir,
+        Err(e) => {
+            println!("Failed to run script: {}", e);
+            if let Some(source) = e.source() {
+                println!("Caused by: {}", source);
+            }
+            panic!("Test failed due to script execution error");
+        }
+    };
+
+    let yaml_content = fs::read_to_string(Path::new(&output_dir).join("fastsave.yaml"))
+        .expect("Failed to read YAML output file");
+    let result: ExecutionResult = serde_yaml::from_str(&yaml_content)
+        .expect("Failed to parse YAML content");
+    
+    assert!(result.command_string.starts_with("python3 "), 
+        "Expected command to start with 'python3', got: {}", result.command_string);
+    
+    // Verify the script executed successfully
+    assert_eq!(result.exit_code, 0, 
+        "Script failed with exit code {}, stderr: {}", result.exit_code, result.stderr);
 }

@@ -29,6 +29,12 @@ fastsave -i python3.9 run_simulation.py
 #     R: Rscript
 # Then run:
 fastsave run_analysis.R
+
+# Using a custom config file path
+fastsave -c /path/to/config.yaml run_simulation.py
+
+# Using a custom config file with interpreter override
+fastsave -c /path/to/config.yaml -i python3.9 run_simulation.py
 ```
 
 ## Configuration

@@ -39,6 +39,10 @@ pub struct Cli {
     /// Override the interpreter for the script
     #[arg(short = 'i', long = "interpreter")]
     pub interpreter: Option<String>,
+
+    /// Override the config file path
+    #[arg(short = 'c', long = "config")]
+    pub config_path: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -72,8 +76,24 @@ pub struct FastsaveConfig {
 }
 
 impl FastsaveConfig {
-    pub fn load() -> Self {
-        // Look for config in common locations
+    pub fn load_with_config_path(config_path: Option<&str>) -> Self {
+        // If config path is provided, try it first
+        if let Some(path) = config_path {
+            let expanded_path = shellexpand::tilde(path).to_string();
+            println!("Debug: Trying to load config from custom path: {}", expanded_path);
+            if let Ok(contents) = fs::read_to_string(&expanded_path) {
+                println!("Debug: Found config file with contents:\n{}", contents);
+                match serde_yaml::from_str(&contents) {
+                    Ok(config) => {
+                        println!("Debug: Successfully parsed config");
+                        return config;
+                    }
+                    Err(e) => println!("Debug: Failed to parse custom config: {}", e),
+                }
+            }
+        }
+
+        // Fall back to default locations if custom path fails or isn't provided
         let config_paths = [
             "fastsave.yaml",  // Current directory
             "~/.config/fastsave/config.yaml", // User config directory
@@ -96,6 +116,11 @@ impl FastsaveConfig {
         
         println!("Debug: No config file found, using default config");
         FastsaveConfig::default()
+    }
+
+    // Add convenience method that maintains backward compatibility
+    pub fn load() -> Self {
+        Self::load_with_config_path(None)
     }
 
     pub fn get_interpreter(&self, extension: &str) -> Option<&String> {
@@ -260,7 +285,7 @@ fn get_file_hashes(dir: &Path) -> Result<HashMap<String, String>, Box<dyn Error>
     Ok(hashes)
 }
 
-pub fn execute_script(script_path: &str, output_dir: &str, message: Option<String>, script_args: &[String], interpreter_override: Option<&String>) -> Result<ExecutionResult, Box<dyn Error>> {
+pub fn execute_script(script_path: &str, output_dir: &str, message: Option<String>, script_args: &[String], interpreter_override: Option<&String>, config_path: Option<&str>) -> Result<ExecutionResult, Box<dyn Error>> {
     let start_time = SystemTime::now();
     let start_datetime = DateTime::<Utc>::from(start_time);
 
@@ -274,7 +299,7 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
     let program = if let Some(interpreter) = interpreter_override {
         interpreter.clone()
     } else {
-        let config = FastsaveConfig::load();
+        let config = FastsaveConfig::load_with_config_path(config_path);
         if let Some(interpreter) = config.get_interpreter(extension) {
             interpreter.to_string()
         } else {
@@ -389,6 +414,7 @@ pub fn run_script(cli: &Cli) -> Result<String, Box<dyn Error>> {
         cli.message.clone(), 
         &cli.script_args,
         cli.interpreter.as_ref(),
+        cli.config_path.as_deref(),
     )?;
 
     // Calculate hashes for all generated files
