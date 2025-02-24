@@ -1,6 +1,6 @@
 [package]
 name = "fastsave"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["Fabian Stutzki <fast@fast-apps.de>"]
 description = "A tool for executing and monitoring scripts with metadata output"
