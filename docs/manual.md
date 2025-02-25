@@ -16,6 +16,9 @@ fastsave -a custom_archive run_simulation.py --rows 3 --cols 4
 
 # Using -- to explicitly separate fastsave args from script args
 fastsave -m "test message" run_simulation.py -- --rows 3 --cols 4
+
+# Use a custom interpreter
+fastsave -i python3.9 run_simulation.py
 ```
 
 ## Arguments
@@ -26,30 +29,35 @@ fastsave -m "test message" run_simulation.py -- --rows 3 --cols 4
 - `-a, --archive-dir <DIR>`: Directory to store results (default: "archive")
 - `-m, --message <MESSAGE>`: Optional message to include with the results
 - `--no-subfolder`: Store results directly in archive directory without creating a timestamped subfolder
+- `-i, --interpreter <INTERPRETER>`: Override the default interpreter
+- `-c, --config <CONFIG>`: Use a custom configuration file
 
 ## Output Structure
 
 By default, fastsave creates a structured output directory:
 
+```bash
 archive/
 └── YYYY-MM-DD_script-name_runN/
-├── fastsave.json # Execution details and results
-└── [script outputs] # Any files created by the script
-
+    ├── fastsave.yaml # Execution details and results
+    └── [script outputs] # Any files created by the script
+```
 The directory name format is:
 - `YYYY-MM-DD`: Current date
 - `script-name`: Name of the executed script (without extension)
 - `runN`: Run number, automatically incremented for each run
 
-### fastsave.json
+### fastsave.yaml
 
-The JSON file contains:
+The YAML file contains:
 - Script information (path, type)
 - Execution timestamps (start, end)
 - Duration in milliseconds
 - Exit code
 - Standard output and error
 - Optional message
+- Git repository information (if available)
+- SHA-256 hashes of output files
 
 ```json
 json
@@ -66,11 +74,24 @@ json
 }
 ````
 
-## Supported Script Types
+## Interpreter Configuration
 
-Currently supported script types (detected by file extension):
-- Python (`.py`)
-- Shell (`.sh`)
+You can configure interpreter mappings in (in order of precedence):
+1. Command line argument (`-i/--interpreter`)
+2. Custom config file specified with `-c/--config`
+3. Local config file (`./fastsave.yaml`)
+4. User config file (`~/.config/fastsave/config.yaml`)
+5. Built-in defaults
+
+Example configuration file:
+
+```yaml
+interpreters:
+  py: python
+  R: Rscript
+  jl: julia
+  m: matlab
+```
 
 ## Script Requirements
 
@@ -80,12 +101,13 @@ Scripts should accept an `--output_dir` argument where they will write their out
 import argparse
 from pathlib import Path
 def main():
-parser = argparse.ArgumentParser()
-parser.add_argument('--output_dir', default='')
-args = parser.parse_args()
-output_path = Path(args.output_dir)
-# Write outputs to output_path
-with (output_path/'results.txt').open('w') as f:
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output_dir', default='')
+    args = parser.parse_args()
+    output_path = Path(args.output_dir)
+    # Write outputs to output_path
+    with (output_path/'results.txt').open('w') as f:
+        f.write('Hello, world!')
 ```
 
 ## Installation
@@ -120,3 +142,7 @@ fastsave will:
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+FaSt Apps & Consulting GmbH
+
+2025

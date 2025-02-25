@@ -305,7 +305,7 @@ pub fn execute_script(script_path: &str, output_dir: &str, message: Option<Strin
         } else {
             // Fall back to built-in defaults
             match extension.to_lowercase().as_str() {
-                "py" => "python3".to_string(),
+                "py" => "python".to_string(),
                 "sh" => "sh".to_string(),
                 "jl" => "julia".to_string(),
                 "m" => "matlab".to_string(),

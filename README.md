@@ -1,6 +1,6 @@
 # FaStSave
 
-A tool for executing and monitoring scripts with JSON output.
+A tool for executing and monitoring scripts with YAML output and metadata collection.
 
 For full documentation, see [the manual](docs/manual.md).
 
@@ -34,14 +34,27 @@ fastsave run_analysis.R
 fastsave -c /path/to/config.yaml run_simulation.py
 
 # Using a custom config file with interpreter override
-fastsave -c /path/to/config.yaml -i python3.9 run_simulation.py
+fastsave -c /path/to/config.yaml -i python3 run_simulation.py
 ```
+
+## Arguments
+
+- `<script>`: Path to the script to execute
+- `-a, --archive-dir <DIR>`: Directory to store results (default: "archive")
+- `-m, --message <MESSAGE>`: Optional message to include with the results
+- `-i, --interpreter <INTERPRETER>`: Override the default interpreter
+- `-c, --config <CONFIG>`: Use a custom configuration file
+- `--no-subfolder`: Store results directly in archive directory
+- `[script_args]...`: Additional arguments passed to the script
 
 ## Configuration
 
-You can configure interpreter mappings in either:
-- `./fastsave.yaml` (current directory)
-- `~/.config/fastsave/config.yaml` (user config)
+You can configure interpreter mappings in (in order of precedence):
+1. Command line argument (`-i/--interpreter`)
+2. Custom config file specified with `-c/--config`
+3. Local config file (`./fastsave.yaml`)
+4. User config file (`~/.config/fastsave/config.yaml`)
+5. Built-in defaults
 
 Example configuration:
 ```yaml
@@ -53,10 +66,23 @@ interpreters:
 ```
 
 Default interpreter mappings:
-- `.py` -> `python3`
+- `.py` -> `python`
 - `.sh` -> `sh`
 - `.jl` -> `julia`
 - `.m` -> `matlab`
+
+## Output
+
+Results are saved in YAML format (`fastsave.yaml`) containing:
+- Script execution details
+- Start and end times
+- Duration
+- Exit code
+- Standard output and error
+- Git information (if script is in a git repository)
+- File hashes of generated outputs
+- Custom message (if provided)
+- Command string used for execution
 
 Fabian Stutzki
 
